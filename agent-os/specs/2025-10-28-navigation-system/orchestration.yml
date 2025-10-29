@@ -1,0 +1,15 @@
+task_groups:
+  - name: Navigation Architecture Setup
+    claude_code_subagent: implementer
+  - name: Bottom Sheet Component & Integration
+    claude_code_subagent: implementer
+  - name: Recipe Detail Screen Implementation
+    claude_code_subagent: implementer
+  - name: Add Recipe Tab & Choice Screen
+    claude_code_subagent: implementer
+  - name: Recipe Form (Create/Edit Mode)
+    claude_code_subagent: implementer
+  - name: Unsaved Changes Detection & Dialog
+    claude_code_subagent: implementer
+  - name: Integration Testing & Cross-Feature Validation
+    claude_code_subagent: implementer
