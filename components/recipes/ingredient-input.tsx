@@ -1,9 +1,10 @@
 /**
  * Ingredient Input Component
  * Reusable component for ingredient entry with name, quantity, and unit
+ * Task 11.1: Optimized with React.memo for performance
  */
 
-import React from 'react';
+import React, { useMemo, useCallback } from 'react';
 import {
   View,
   Text,
@@ -31,8 +32,9 @@ interface IngredientInputProps {
 
 /**
  * Ingredient input component with name, quantity, and unit fields
+ * Task 11.1: Performance optimized with memoization
  */
-export function IngredientInput({
+function IngredientInputComponent({
   name,
   quantity,
   unit,
@@ -47,33 +49,43 @@ export function IngredientInput({
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
 
-  // Create unit options
-  const unitOptions: SelectOption[] = [
-    { label: 'No unit', value: '' },
-    ...EnumUtils.getAllMeasurementUnits().map((u) => ({
-      label: u,
-      value: u,
-    })),
-  ];
+  // Task 11.1: Memoize unit options to prevent recreation on every render
+  const unitOptions: SelectOption[] = useMemo(
+    () => [
+      { label: 'No unit', value: '' },
+      ...EnumUtils.getAllMeasurementUnits().map((u) => ({
+        label: u,
+        value: u,
+      })),
+    ],
+    []
+  );
 
-  const handleQuantityChange = (text: string) => {
-    if (text === '') {
-      onQuantityChange(null);
-    } else {
-      const num = parseFloat(text);
-      if (!isNaN(num) && num > 0) {
-        onQuantityChange(num);
+  // Task 11.1: Memoize handlers to prevent unnecessary re-renders
+  const handleQuantityChange = useCallback(
+    (text: string) => {
+      if (text === '') {
+        onQuantityChange(null);
+      } else {
+        const num = parseFloat(text);
+        if (!isNaN(num) && num > 0) {
+          onQuantityChange(num);
+        }
       }
-    }
-  };
+    },
+    [onQuantityChange]
+  );
 
-  const handleUnitChange = (value: string) => {
-    if (value === '') {
-      onUnitChange(null);
-    } else {
-      onUnitChange(value as MeasurementUnit);
-    }
-  };
+  const handleUnitChange = useCallback(
+    (value: string) => {
+      if (value === '') {
+        onUnitChange(null);
+      } else {
+        onUnitChange(value as MeasurementUnit);
+      }
+    },
+    [onUnitChange]
+  );
 
   return (
     <View
@@ -124,6 +136,9 @@ export function IngredientInput({
     </View>
   );
 }
+
+// Task 11.1: Export memoized component for performance optimization
+export const IngredientInput = React.memo(IngredientInputComponent);
 
 const styles = StyleSheet.create({
   container: {

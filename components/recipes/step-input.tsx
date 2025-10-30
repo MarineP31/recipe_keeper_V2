@@ -1,9 +1,10 @@
 /**
  * Step Input Component
  * Reusable component for instruction step entry
+ * Task 11.1: Optimized with React.memo for performance
  */
 
-import React from 'react';
+import React, { useCallback } from 'react';
 import {
   View,
   TextInput,
@@ -25,8 +26,9 @@ interface StepInputProps {
 
 /**
  * Step input component for instruction entry
+ * Task 11.1: Performance optimized with memoization
  */
-export function StepInput({
+function StepInputComponent({
   value,
   onChange,
   onRemove,
@@ -36,6 +38,14 @@ export function StepInput({
 }: StepInputProps) {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
+
+  // Task 11.1: Memoize handler to prevent unnecessary re-renders
+  const handleChange = useCallback(
+    (text: string) => {
+      onChange(text);
+    },
+    [onChange]
+  );
 
   return (
     <View
@@ -68,7 +78,7 @@ export function StepInput({
         placeholder={`Describe step ${index + 1}...`}
         placeholderTextColor="#8E8E93"
         value={value}
-        onChangeText={onChange}
+        onChangeText={handleChange}
         multiline
         numberOfLines={3}
         textAlignVertical="top"
@@ -78,6 +88,9 @@ export function StepInput({
     </View>
   );
 }
+
+// Task 11.1: Export memoized component for performance optimization
+export const StepInput = React.memo(StepInputComponent);
 
 const styles = StyleSheet.create({
   container: {

@@ -1,6 +1,6 @@
 /**
  * Recipe Create Screen
- * Task Group 5.8: Form for creating a new recipe
+ * Task 7.1: Create Operation with proper navigation to recipe detail
  */
 
 import { Stack, useRouter } from 'expo-router';
@@ -12,8 +12,13 @@ export default function RecipeCreateScreen() {
   const router = useRouter();
 
   const handleSave = (recipe: Recipe) => {
-    // Navigate back to previous screen after successful save
-    router.back();
+    // Task 7.1: Navigate to recipe detail view after successful creation
+    if (recipe.id) {
+      router.replace(`/recipe/${recipe.id}`);
+    } else {
+      // Fallback if recipe ID is not available
+      router.back();
+    }
   };
 
   return (

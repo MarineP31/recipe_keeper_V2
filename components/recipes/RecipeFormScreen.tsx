@@ -1,15 +1,15 @@
 /**
  * Recipe Form Screen Component
- * Task Group 5.3-5.7: Shared component for create and edit modes
- * Task Group 6.6: Integrated with unsaved changes detection
- * Handles form state, validation, and dynamic ingredient/step fields
+ * Task Group 5: Recipe Form Implementation
+ * Task Group 9: Form Validation & Error Handling
+ * Task Group 11: Performance & Optimization
+ * Shared component for create and edit modes with React Hook Form integration
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
-  TextInput,
   ScrollView,
   StyleSheet,
   TouchableOpacity,
@@ -19,13 +19,21 @@ import {
   Alert,
   useColorScheme,
 } from 'react-native';
-import { Picker } from '@react-native-picker/picker';
+import { useForm, Controller, useFieldArray, SubmitHandler } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
 import Icon from 'react-native-vector-icons/Ionicons';
-import { DishCategory, MeasurementUnit, EnumUtils } from '@/constants/enums';
+import { DishCategory, EnumUtils } from '@/constants/enums';
 import { recipeService } from '@/lib/db/services/recipe-service';
-import type { Recipe, Ingredient, CreateRecipeInput, UpdateRecipeInput } from '@/lib/db/schema/recipe';
-import { validateRecipeForm, getFieldError, type RecipeFormData, type RecipeFormErrors } from '@/lib/validation/recipe-form-schema';
-import { useUnsavedChanges } from '@/lib/hooks/useUnsavedChanges';
+import type { Recipe, CreateRecipeInput, UpdateRecipeInput, Ingredient } from '@/lib/db/schema/recipe';
+import { RecipeFormSchema, RecipeFormData } from '@/lib/validations/recipe-form-schema';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
+import { Select, SelectOption } from '@/components/ui/select';
+import { IngredientInput } from '@/components/recipes/ingredient-input';
+import { StepInput } from '@/components/recipes/step-input';
+import { TagSelector } from '@/components/recipes/tag-selector';
+import { ImagePickerButton } from '@/components/recipes/image-picker-button';
+import { Toast } from '@/components/ui/toast';
 
 interface RecipeFormScreenProps {
   mode: 'create' | 'edit';
@@ -33,46 +41,75 @@ interface RecipeFormScreenProps {
   onSave: (recipe: Recipe) => void;
 }
 
-interface FormIngredient {
-  name: string;
-  quantity: string; // String for text input, converted to number on save
-  unit: MeasurementUnit | null;
-}
-
 /**
  * Shared recipe form component for create and edit modes
- * Includes unsaved changes protection
+ * Task 5.1: Recipe Form Screen
+ * Task 9.1: Form Validation Implementation
+ * Task 9.2: Error Handling System
+ * Task 9.3: Success Feedback System
+ * Task 11.1: Form Performance Optimization
  */
 export function RecipeFormScreen({ mode, recipeId, onSave }: RecipeFormScreenProps) {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
-
-  // Form state
-  const [title, setTitle] = useState('');
-  const [servings, setServings] = useState('4');
-  const [category, setCategory] = useState<DishCategory>(DishCategory.DINNER);
-  const [prepTime, setPrepTime] = useState('');
-  const [cookTime, setCookTime] = useState('');
-  const [tags, setTags] = useState('');
-  const [imageUri, setImageUri] = useState<string | null>(null);
-  const [ingredients, setIngredients] = useState<FormIngredient[]>([
-    { name: '', quantity: '', unit: null },
-  ]);
-  const [steps, setSteps] = useState<string[]>(['']);
-
-  // UI state
-  const [loading, setLoading] = useState(false);
   const [loadingRecipe, setLoadingRecipe] = useState(mode === 'edit');
-  const [errors, setErrors] = useState<RecipeFormErrors>({});
-  const [isDirty, setIsDirty] = useState(false);
-  const [initialValues, setInitialValues] = useState<string>('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [toast, setToast] = useState<{
+    visible: boolean;
+    message: string;
+    type: 'success' | 'error';
+  }>({ visible: false, message: '', type: 'success' });
 
-  // Theme colors
-  const backgroundColor = isDark ? '#000000' : '#FFFFFF';
-  const textPrimary = isDark ? '#FFFFFF' : '#000000';
-  const textSecondary = isDark ? '#8E8E93' : '#8E8E93';
-  const inputBackground = isDark ? '#1C1C1E' : '#F2F2F7';
-  const borderColor = isDark ? '#38383A' : '#C6C6C8';
+  // Task 5.1 & 9.1 & 11.1: React Hook Form setup with optimized validation
+  const form = useForm<RecipeFormData>({
+    resolver: zodResolver(RecipeFormSchema) as any,
+    mode: 'onBlur', // Task 11.1: Changed from onChange to onBlur for better performance
+    reValidateMode: 'onBlur', // Task 11.1: Optimize revalidation
+    defaultValues: {
+      title: '',
+      servings: 4,
+      category: DishCategory.DINNER,
+      ingredients: [{ name: '', quantity: null, unit: null }],
+      steps: [''],
+      imageUri: null,
+      prepTime: null,
+      cookTime: null,
+      tags: [],
+      source: null,
+    },
+  });
+
+  const { control, handleSubmit, formState: { errors, isValid }, reset } = form;
+
+  // Task 5.4 & 11.1: Dynamic ingredients field array with optimized rendering
+  const {
+    fields: ingredientFields,
+    append: appendIngredient,
+    remove: removeIngredient,
+  } = useFieldArray({
+    control,
+    name: 'ingredients',
+  });
+
+  // Task 5.5 & 11.1: Dynamic instructions field array with optimized rendering
+  const {
+    fields: stepFields,
+    append: appendStep,
+    remove: removeStep,
+  } = useFieldArray({
+    control,
+    name: 'steps' as any,
+  });
+
+  // Task 11.1: Memoize category options to prevent unnecessary re-renders
+  const categoryOptions: SelectOption[] = useMemo(
+    () =>
+      EnumUtils.getAllDishCategories().map((cat) => ({
+        label: cat.charAt(0).toUpperCase() + cat.slice(1),
+        value: cat,
+      })),
+    []
+  );
 
   // Load recipe data in edit mode
   useEffect(() => {
@@ -81,26 +118,9 @@ export function RecipeFormScreen({ mode, recipeId, onSave }: RecipeFormScreenPro
     }
   }, [mode, recipeId]);
 
-  // Track dirty state
-  useEffect(() => {
-    if (mode === 'edit' && !loadingRecipe && initialValues) {
-      const currentValues = JSON.stringify(getFormValues());
-      setIsDirty(currentValues !== initialValues);
-    } else if (mode === 'create') {
-      // In create mode, form is dirty if any field has been modified
-      const hasContent = Boolean(
-        title ||
-        servings !== '4' ||
-        prepTime ||
-        cookTime ||
-        tags ||
-        ingredients.some(i => i.name || i.quantity) ||
-        steps.some(s => s)
-      );
-      setIsDirty(hasContent);
-    }
-  }, [title, servings, category, prepTime, cookTime, tags, ingredients, steps, initialValues, loadingRecipe]);
-
+  /**
+   * Task 9.2: Enhanced database error handling with user-friendly messages
+   */
   const loadRecipeData = async () => {
     if (!recipeId) return;
 
@@ -108,167 +128,198 @@ export function RecipeFormScreen({ mode, recipeId, onSave }: RecipeFormScreenPro
     try {
       const recipe = await recipeService.getRecipeById(recipeId);
       if (recipe) {
-        setTitle(recipe.title);
-        setServings(recipe.servings.toString());
-        setCategory(recipe.category);
-        setPrepTime(recipe.prepTime?.toString() || '');
-        setCookTime(recipe.cookTime?.toString() || '');
-        setTags(recipe.tags.join(', '));
-        setImageUri(recipe.imageUri);
-
-        const formIngredients: FormIngredient[] = recipe.ingredients.map(ing => ({
-          name: ing.name,
-          quantity: ing.quantity?.toString() || '',
-          unit: ing.unit,
-        }));
-        setIngredients(formIngredients.length > 0 ? formIngredients : [{ name: '', quantity: '', unit: null }]);
-        setSteps(recipe.steps.length > 0 ? recipe.steps : ['']);
-
-        // Store initial values for dirty detection
-        setInitialValues(JSON.stringify({
+        // Reset form with recipe data
+        reset({
           title: recipe.title,
-          servings: recipe.servings.toString(),
+          servings: recipe.servings,
           category: recipe.category,
-          prepTime: recipe.prepTime?.toString() || '',
-          cookTime: recipe.cookTime?.toString() || '',
-          tags: recipe.tags.join(', '),
-          ingredients: formIngredients,
-          steps: recipe.steps,
-        }));
+          ingredients: recipe.ingredients.length > 0
+            ? recipe.ingredients.map(ing => ({
+                name: ing.name,
+                quantity: ing.quantity ?? null,
+                unit: ing.unit ?? null,
+              }))
+            : [{ name: '', quantity: null, unit: null }],
+          steps: recipe.steps.length > 0 ? recipe.steps : [''],
+          imageUri: recipe.imageUri ?? null,
+          prepTime: recipe.prepTime ?? null,
+          cookTime: recipe.cookTime ?? null,
+          tags: recipe.tags || [],
+          source: null,
+        });
+      } else {
+        // Task 9.2: Handle recipe not found
+        setToast({
+          visible: true,
+          message: 'Recipe not found. It may have been deleted.',
+          type: 'error',
+        });
       }
     } catch (error) {
-      Alert.alert('Error', 'Failed to load recipe data');
       console.error('Failed to load recipe:', error);
+      // Task 9.2: User-friendly database error message
+      const errorMessage = error instanceof Error
+        ? `Failed to load recipe: ${error.message}`
+        : 'Failed to load recipe data. Please check your connection and try again.';
+
+      setToast({
+        visible: true,
+        message: errorMessage,
+        type: 'error',
+      });
     } finally {
       setLoadingRecipe(false);
     }
   };
 
-  const getFormValues = () => ({
-    title,
-    servings,
-    category,
-    prepTime,
-    cookTime,
-    tags,
-    ingredients,
-    steps,
-  });
-
-  // Ingredient handlers
-  const addIngredient = () => {
-    setIngredients([...ingredients, { name: '', quantity: '', unit: null }]);
-  };
-
-  const removeIngredient = (index: number) => {
-    if (ingredients.length > 1) {
-      setIngredients(ingredients.filter((_, i) => i !== index));
-    }
-  };
-
-  const updateIngredient = (index: number, field: keyof FormIngredient, value: string | MeasurementUnit | null) => {
-    const updated = [...ingredients];
-    updated[index] = { ...updated[index], [field]: value };
-    setIngredients(updated);
-  };
-
-  // Step handlers
-  const addStep = () => {
-    setSteps([...steps, '']);
-  };
-
-  const removeStep = (index: number) => {
-    if (steps.length > 1) {
-      setSteps(steps.filter((_, i) => i !== index));
-    }
-  };
-
-  const updateStep = (index: number, value: string) => {
-    const updated = [...steps];
-    updated[index] = value;
-    setSteps(updated);
-  };
-
-  // Validation and save
-  const handleSave = async () => {
-    setErrors({});
-
-    // Prepare data for validation
-    const formData: RecipeFormData = {
-      title: title.trim(),
-      servings: parseInt(servings, 10) || 0,
-      category,
-      prepTime: prepTime ? parseInt(prepTime, 10) : null,
-      cookTime: cookTime ? parseInt(cookTime, 10) : null,
-      tags: tags ? tags.split(',').map(t => t.trim()).filter(t => t) : [],
-      imageUri: imageUri || null,
-      ingredients: ingredients.map(ing => ({
-        name: ing.name.trim(),
-        quantity: ing.quantity ? parseFloat(ing.quantity) : null,
-        unit: ing.unit,
-      })),
-      steps: steps.map(s => s.trim()).filter(s => s),
-    };
-
-    // Validate form
-    const validation = validateRecipeForm(formData);
-    if (!validation.success) {
-      setErrors(validation.errors || {});
-      Alert.alert('Validation Error', 'Please fix the errors in the form');
-      return;
-    }
-
-    setLoading(true);
+  /**
+   * Task 5.1 & 9.2 & 9.3: Form submission handling with enhanced error handling and success feedback
+   */
+  const onSubmit: SubmitHandler<RecipeFormData> = async (data) => {
     try {
+      setIsSubmitting(true);
+
+      // Transform form data to match Ingredient interface
+      const transformedIngredients: Ingredient[] = data.ingredients.map(ing => ({
+        name: ing.name,
+        quantity: ing.quantity ?? null,
+        unit: ing.unit ?? null,
+      }));
+
       if (mode === 'create') {
-        const input: CreateRecipeInput = {
-          title: formData.title,
-          servings: formData.servings,
-          category: formData.category,
-          ingredients: formData.ingredients as Ingredient[],
-          steps: formData.steps,
-          prepTime: formData.prepTime,
-          cookTime: formData.cookTime,
-          tags: formData.tags,
-          imageUri: formData.imageUri,
+        // Create new recipe
+        const recipeInput: CreateRecipeInput = {
+          title: data.title,
+          servings: data.servings,
+          category: data.category,
+          ingredients: transformedIngredients,
+          steps: data.steps,
+          imageUri: data.imageUri ?? null,
+          prepTime: data.prepTime ?? null,
+          cookTime: data.cookTime ?? null,
+          tags: data.tags || [],
         };
-        const recipe = await recipeService.createRecipe(input);
-        onSave(recipe);
+
+        const createdRecipe = await recipeService.createRecipe(recipeInput);
+
+        // Task 9.3: Create success feedback
+        setToast({
+          visible: true,
+          message: 'Recipe created successfully',
+          type: 'success',
+        });
+
+        // Delay navigation to show toast
+        setTimeout(() => {
+          onSave(createdRecipe);
+        }, 1000);
       } else if (mode === 'edit' && recipeId) {
-        const input: UpdateRecipeInput = {
+        // Update existing recipe
+        const updateInput: UpdateRecipeInput = {
           id: recipeId,
-          title: formData.title,
-          servings: formData.servings,
-          category: formData.category,
-          ingredients: formData.ingredients as Ingredient[],
-          steps: formData.steps,
-          prepTime: formData.prepTime,
-          cookTime: formData.cookTime,
-          tags: formData.tags,
-          imageUri: formData.imageUri,
+          title: data.title,
+          servings: data.servings,
+          category: data.category,
+          ingredients: transformedIngredients,
+          steps: data.steps,
+          imageUri: data.imageUri ?? null,
+          prepTime: data.prepTime ?? null,
+          cookTime: data.cookTime ?? null,
+          tags: data.tags || [],
         };
-        const recipe = await recipeService.updateRecipe(input);
-        onSave(recipe);
+
+        const updatedRecipe = await recipeService.updateRecipe(updateInput);
+
+        // Task 9.3: Update success feedback
+        setToast({
+          visible: true,
+          message: 'Recipe updated successfully',
+          type: 'success',
+        });
+
+        // Delay navigation to show toast
+        setTimeout(() => {
+          onSave(updatedRecipe);
+        }, 1000);
       }
     } catch (error) {
-      Alert.alert('Error', mode === 'create' ? 'Failed to create recipe' : 'Failed to update recipe');
-      console.error('Save error:', error);
-    } finally {
-      setLoading(false);
+      console.error('Error saving recipe:', error);
+
+      // Task 9.2 & 9.3: Enhanced database error handling with specific messages
+      let errorMessage = `Failed to ${mode === 'create' ? 'create' : 'update'} recipe. `;
+
+      if (error instanceof Error) {
+        // Provide more specific error messages based on error type
+        if (error.message.includes('UNIQUE constraint')) {
+          errorMessage += 'A recipe with this title already exists.';
+        } else if (error.message.includes('NOT NULL constraint')) {
+          errorMessage += 'Required fields are missing.';
+        } else if (error.message.includes('network') || error.message.includes('connection')) {
+          errorMessage += 'Please check your connection and try again.';
+        } else {
+          errorMessage += error.message;
+        }
+      } else {
+        errorMessage += 'Please try again.';
+      }
+
+      // Task 9.3: Error toast notification
+      setToast({
+        visible: true,
+        message: errorMessage,
+        type: 'error',
+      });
+      setIsSubmitting(false);
     }
   };
 
-  // Unsaved changes protection (Task Group 6.6)
-  const { showUnsavedChangesDialog } = useUnsavedChanges({
-    isDirty,
-    onSave: handleSave,
-  });
+  /**
+   * Task 11.1: Memoized handlers to prevent unnecessary re-renders
+   */
+  const handleAddIngredient = useCallback(() => {
+    appendIngredient({ name: '', quantity: null, unit: null });
+  }, [appendIngredient]);
 
+  const handleAddStep = useCallback(() => {
+    appendStep('' as any);
+  }, [appendStep]);
+
+  const handleRemoveIngredient = useCallback((index: number) => {
+    removeIngredient(index);
+  }, [removeIngredient]);
+
+  const handleRemoveStep = useCallback((index: number) => {
+    removeStep(index);
+  }, [removeStep]);
+
+  /**
+   * Handle cancel with unsaved changes warning
+   */
+  const handleCancel = useCallback(() => {
+    Alert.alert(
+      'Discard Changes?',
+      `Are you sure you want to discard ${mode === 'create' ? 'this recipe' : 'your changes'}?`,
+      [
+        { text: 'Keep Editing', style: 'cancel' },
+        {
+          text: 'Discard',
+          style: 'destructive',
+          onPress: () => onSave({} as Recipe), // Trigger navigation back
+        },
+      ]
+    );
+  }, [mode, onSave]);
+
+  /**
+   * Task 9.2: Loading state with error handling
+   */
   if (loadingRecipe) {
     return (
-      <View style={[styles.loadingContainer, { backgroundColor }]}>
+      <View style={[styles.loadingContainer, isDark && styles.loadingContainerDark]}>
         <ActivityIndicator size="large" color="#007AFF" />
-        <Text style={[styles.loadingText, { color: textSecondary }]}>Loading recipe...</Text>
+        <Text style={[styles.loadingText, isDark && styles.loadingTextDark]}>
+          Loading recipe...
+        </Text>
       </View>
     );
   }
@@ -280,230 +331,275 @@ export function RecipeFormScreen({ mode, recipeId, onSave }: RecipeFormScreenPro
       keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
     >
       <ScrollView
-        style={[styles.scrollView, { backgroundColor }]}
+        style={[styles.scrollView, isDark && styles.scrollViewDark]}
         contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
+        removeClippedSubviews={true} // Task 11.1: Performance optimization
       >
-        {/* Title */}
+        {/* Task 5.2: Basic Info Section */}
         <View style={styles.section}>
-          <Text style={[styles.label, { color: textPrimary }]}>
-            Title <Text style={styles.required}>*</Text>
+          <Text style={[styles.sectionTitle, isDark && styles.sectionTitleDark]}>
+            Basic Information
           </Text>
-          <TextInput
-            style={[styles.input, { backgroundColor: inputBackground, color: textPrimary, borderColor }]}
-            placeholder="Recipe Title"
-            placeholderTextColor={textSecondary}
-            value={title}
-            onChangeText={setTitle}
-          />
-          {getFieldError(errors, 'title') && (
-            <Text style={styles.errorText}>{getFieldError(errors, 'title')}</Text>
-          )}
-        </View>
 
-        {/* Servings and Category Row */}
-        <View style={styles.row}>
-          <View style={[styles.column, styles.halfWidth]}>
-            <Text style={[styles.label, { color: textPrimary }]}>
-              Servings <Text style={styles.required}>*</Text>
-            </Text>
-            <TextInput
-              style={[styles.input, { backgroundColor: inputBackground, color: textPrimary, borderColor }]}
-              placeholder="4"
-              placeholderTextColor={textSecondary}
-              value={servings}
-              onChangeText={setServings}
-              keyboardType="number-pad"
-            />
-            {getFieldError(errors, 'servings') && (
-              <Text style={styles.errorText}>{getFieldError(errors, 'servings')}</Text>
-            )}
-          </View>
-
-          <View style={[styles.column, styles.halfWidth]}>
-            <Text style={[styles.label, { color: textPrimary }]}>
-              Category <Text style={styles.required}>*</Text>
-            </Text>
-            <View style={[styles.pickerContainer, { backgroundColor: inputBackground, borderColor }]}>
-              <Picker
-                selectedValue={category}
-                onValueChange={setCategory}
-                style={[styles.picker, { color: textPrimary }]}
-              >
-                {EnumUtils.getAllDishCategories().map(cat => (
-                  <Picker.Item key={cat} label={cat.charAt(0).toUpperCase() + cat.slice(1)} value={cat} />
-                ))}
-              </Picker>
-            </View>
-          </View>
-        </View>
-
-        {/* Prep Time and Cook Time Row */}
-        <View style={styles.row}>
-          <View style={[styles.column, styles.halfWidth]}>
-            <Text style={[styles.label, { color: textPrimary }]}>Prep Time (min)</Text>
-            <TextInput
-              style={[styles.input, { backgroundColor: inputBackground, color: textPrimary, borderColor }]}
-              placeholder="15"
-              placeholderTextColor={textSecondary}
-              value={prepTime}
-              onChangeText={setPrepTime}
-              keyboardType="number-pad"
-            />
-          </View>
-
-          <View style={[styles.column, styles.halfWidth]}>
-            <Text style={[styles.label, { color: textPrimary }]}>Cook Time (min)</Text>
-            <TextInput
-              style={[styles.input, { backgroundColor: inputBackground, color: textPrimary, borderColor }]}
-              placeholder="30"
-              placeholderTextColor={textSecondary}
-              value={cookTime}
-              onChangeText={setCookTime}
-              keyboardType="number-pad"
-            />
-          </View>
-        </View>
-
-        {/* Tags */}
-        <View style={styles.section}>
-          <Text style={[styles.label, { color: textPrimary }]}>Tags</Text>
-          <TextInput
-            style={[styles.input, { backgroundColor: inputBackground, color: textPrimary, borderColor }]}
-            placeholder="e.g. Italian, Vegetarian, Quick"
-            placeholderTextColor={textSecondary}
-            value={tags}
-            onChangeText={setTags}
-          />
-          <Text style={[styles.hint, { color: textSecondary }]}>Separate tags with commas</Text>
-        </View>
-
-        {/* Image Placeholder */}
-        <View style={styles.section}>
-          <Text style={[styles.label, { color: textPrimary }]}>Image</Text>
-          <TouchableOpacity
-            style={[styles.imageButton, { backgroundColor: inputBackground, borderColor }]}
-            onPress={() => Alert.alert('Coming Soon', 'Image upload will be available soon')}
-          >
-            <Icon name="camera-outline" size={24} color={textSecondary} />
-            <Text style={[styles.imageButtonText, { color: textSecondary }]}>
-              {imageUri ? 'Change Image' : 'Add Image'}
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Ingredients */}
-        <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: textPrimary }]}>
-            Ingredients <Text style={styles.required}>*</Text>
-          </Text>
-          {ingredients.map((ingredient, index) => (
-            <View key={index} style={styles.dynamicFieldContainer}>
-              <View style={styles.dynamicFieldContent}>
-                <TextInput
-                  style={[styles.input, styles.flexInput, { backgroundColor: inputBackground, color: textPrimary, borderColor }]}
-                  placeholder="Ingredient name"
-                  placeholderTextColor={textSecondary}
-                  value={ingredient.name}
-                  onChangeText={(value) => updateIngredient(index, 'name', value)}
-                />
-                <TextInput
-                  style={[styles.input, styles.smallInput, { backgroundColor: inputBackground, color: textPrimary, borderColor }]}
-                  placeholder="Qty"
-                  placeholderTextColor={textSecondary}
-                  value={ingredient.quantity}
-                  onChangeText={(value) => updateIngredient(index, 'quantity', value)}
-                  keyboardType="decimal-pad"
-                />
-                <View style={[styles.pickerContainer, styles.unitPicker, { backgroundColor: inputBackground, borderColor }]}>
-                  <Picker
-                    selectedValue={ingredient.unit}
-                    onValueChange={(value) => updateIngredient(index, 'unit', value)}
-                    style={[styles.picker, { color: textPrimary }]}
-                  >
-                    <Picker.Item label="Unit" value={null} />
-                    {EnumUtils.getAllMeasurementUnits().map(unit => (
-                      <Picker.Item key={unit} label={unit} value={unit} />
-                    ))}
-                  </Picker>
-                </View>
-              </View>
-              <TouchableOpacity
-                style={[styles.removeButton, ingredients.length === 1 && styles.removeButtonDisabled]}
-                onPress={() => removeIngredient(index)}
-                disabled={ingredients.length === 1}
-                testID={`remove-ingredient-${index}`}
-              >
-                <Icon name="close-circle" size={24} color={ingredients.length === 1 ? '#C6C6C8' : '#FF3B30'} />
-              </TouchableOpacity>
-            </View>
-          ))}
-          {getFieldError(errors, 'ingredients') && (
-            <Text style={styles.errorText}>{getFieldError(errors, 'ingredients')}</Text>
-          )}
-          <TouchableOpacity style={styles.addButton} onPress={addIngredient}>
-            <Icon name="add-circle-outline" size={20} color="#007AFF" />
-            <Text style={styles.addButtonText}>Add Ingredient</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Steps */}
-        <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: textPrimary }]}>
-            Steps <Text style={styles.required}>*</Text>
-          </Text>
-          {steps.map((step, index) => (
-            <View key={index} style={styles.dynamicFieldContainer}>
-              <View style={styles.stepHeader}>
-                <Text style={[styles.stepNumber, { color: textPrimary }]}>Step {index + 1}</Text>
-                <TouchableOpacity
-                  style={[styles.removeButton, steps.length === 1 && styles.removeButtonDisabled]}
-                  onPress={() => removeStep(index)}
-                  disabled={steps.length === 1}
-                  testID={`remove-step-${index}`}
-                >
-                  <Icon name="close-circle" size={24} color={steps.length === 1 ? '#C6C6C8' : '#FF3B30'} />
-                </TouchableOpacity>
-              </View>
-              <TextInput
-                style={[styles.input, styles.textArea, { backgroundColor: inputBackground, color: textPrimary, borderColor }]}
-                placeholder="Instruction"
-                placeholderTextColor={textSecondary}
-                value={step}
-                onChangeText={(value) => updateStep(index, value)}
-                multiline
-                numberOfLines={3}
+          {/* Task 9.1: Field-level validation with inline error messages */}
+          <Controller
+            control={control}
+            name="title"
+            render={({ field: { onChange, onBlur, value } }) => (
+              <Input
+                label="Recipe Title *"
+                placeholder="e.g., Classic Chocolate Chip Cookies"
+                value={value}
+                onChangeText={onChange}
+                onBlur={onBlur}
+                error={errors.title?.message}
               />
-            </View>
-          ))}
-          {getFieldError(errors, 'steps') && (
-            <Text style={styles.errorText}>{getFieldError(errors, 'steps')}</Text>
-          )}
-          <TouchableOpacity style={styles.addButton} onPress={addStep}>
-            <Icon name="add-circle-outline" size={20} color="#007AFF" />
-            <Text style={styles.addButtonText}>Add Step</Text>
-          </TouchableOpacity>
+            )}
+          />
+
+          <Controller
+            control={control}
+            name="category"
+            render={({ field: { onChange, value } }) => (
+              <View style={styles.fieldContainer}>
+                <Text style={[styles.label, isDark && styles.labelDark]}>
+                  Category *
+                </Text>
+                <Select
+                  value={value}
+                  options={categoryOptions}
+                  onChange={onChange}
+                  placeholder="Select category"
+                />
+                {errors.category && (
+                  <Text style={styles.errorText}>{errors.category.message}</Text>
+                )}
+              </View>
+            )}
+          />
+
+          {/* Task 9.2: Image picker with error handling */}
+          <Controller
+            control={control}
+            name="imageUri"
+            render={({ field: { onChange, value } }) => (
+              <ImagePickerButton
+                imageUri={value ?? null}
+                onImageSelected={onChange}
+                onImageRemoved={() => onChange(null)}
+                error={errors.imageUri?.message}
+              />
+            )}
+          />
         </View>
 
-        {/* Save Button */}
-        <TouchableOpacity
-          style={[styles.saveButton, loading && styles.saveButtonDisabled]}
-          onPress={handleSave}
-          disabled={loading}
-          testID="save-button"
-        >
-          {loading ? (
-            <ActivityIndicator color="#FFFFFF" />
-          ) : (
-            <Text style={styles.saveButtonText}>
-              {mode === 'create' ? 'Create Recipe' : 'Save Changes'}
+        {/* Task 5.3: Time & Servings Section */}
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, isDark && styles.sectionTitleDark]}>
+            Time & Servings
+          </Text>
+
+          <View style={styles.row}>
+            <Controller
+              control={control}
+              name="servings"
+              render={({ field: { onChange, value } }) => (
+                <Input
+                  label="Servings *"
+                  placeholder="4"
+                  value={value?.toString() || ''}
+                  onChangeText={(text) => {
+                    const num = parseInt(text);
+                    onChange(isNaN(num) ? 1 : num);
+                  }}
+                  keyboardType="number-pad"
+                  error={errors.servings?.message}
+                  containerStyle={styles.halfWidth}
+                />
+              )}
+            />
+
+            <Controller
+              control={control}
+              name="prepTime"
+              render={({ field: { onChange, value } }) => (
+                <Input
+                  label="Prep Time (min)"
+                  placeholder="15"
+                  value={value?.toString() || ''}
+                  onChangeText={(text) => {
+                    if (text === '') {
+                      onChange(null);
+                    } else {
+                      const num = parseInt(text);
+                      onChange(isNaN(num) ? null : num);
+                    }
+                  }}
+                  keyboardType="number-pad"
+                  error={errors.prepTime?.message}
+                  containerStyle={styles.halfWidth}
+                />
+              )}
+            />
+          </View>
+
+          <Controller
+            control={control}
+            name="cookTime"
+            render={({ field: { onChange, value } }) => (
+              <Input
+                label="Cook Time (min)"
+                placeholder="30"
+                value={value?.toString() || ''}
+                onChangeText={(text) => {
+                  if (text === '') {
+                    onChange(null);
+                  } else {
+                    const num = parseInt(text);
+                    onChange(isNaN(num) ? null : num);
+                  }
+                }}
+                keyboardType="number-pad"
+                error={errors.cookTime?.message}
+              />
+            )}
+          />
+        </View>
+
+        {/* Task 5.4 & 11.1: Dynamic Ingredients Section with optimized rendering */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={[styles.sectionTitle, isDark && styles.sectionTitleDark]}>
+              Ingredients *
             </Text>
+            <TouchableOpacity
+              style={styles.addButton}
+              onPress={handleAddIngredient}
+            >
+              <Icon name="add-circle" size={24} color="#007AFF" />
+            </TouchableOpacity>
+          </View>
+
+          {/* Task 9.1 & 11.1: Ingredient field validation with optimized rendering */}
+          {ingredientFields.map((field, index) => (
+            <Controller
+              key={field.id}
+              control={control}
+              name={`ingredients.${index}`}
+              render={({ field: { onChange, value } }) => (
+                <IngredientInput
+                  index={index}
+                  name={value.name}
+                  quantity={value.quantity ?? null}
+                  unit={value.unit ?? null}
+                  onNameChange={(name) => onChange({ ...value, name })}
+                  onQuantityChange={(quantity) => onChange({ ...value, quantity })}
+                  onUnitChange={(unit) => onChange({ ...value, unit })}
+                  onRemove={() => handleRemoveIngredient(index)}
+                  showRemove={ingredientFields.length > 1}
+                  error={errors.ingredients?.[index]?.name?.message}
+                />
+              )}
+            />
+          ))}
+
+          {/* Task 9.1: Form-level validation error */}
+          {errors.ingredients && typeof errors.ingredients.message === 'string' && (
+            <Text style={styles.errorText}>{errors.ingredients.message}</Text>
           )}
-        </TouchableOpacity>
+        </View>
+
+        {/* Task 5.5 & 11.1: Dynamic Instructions Section with optimized rendering */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={[styles.sectionTitle, isDark && styles.sectionTitleDark]}>
+              Instructions *
+            </Text>
+            <TouchableOpacity
+              style={styles.addButton}
+              onPress={handleAddStep}
+            >
+              <Icon name="add-circle" size={24} color="#007AFF" />
+            </TouchableOpacity>
+          </View>
+
+          {/* Task 9.1 & 11.1: Step field validation with optimized rendering */}
+          {stepFields.map((field, index) => (
+            <Controller
+              key={field.id}
+              control={control}
+              name={`steps.${index}` as any}
+              render={({ field: { onChange, value } }) => (
+                <StepInput
+                  index={index}
+                  value={typeof value === 'string' ? value : ''}
+                  onChange={onChange}
+                  onRemove={() => handleRemoveStep(index)}
+                  showRemove={stepFields.length > 1}
+                  error={errors.steps?.[index]?.message}
+                />
+              )}
+            />
+          ))}
+
+          {/* Task 9.1: Form-level validation error */}
+          {errors.steps && typeof errors.steps.message === 'string' && (
+            <Text style={styles.errorText}>{errors.steps.message}</Text>
+          )}
+        </View>
+
+        {/* Task 5.6: Tags Section */}
+        <View style={styles.section}>
+          <Controller
+            control={control}
+            name="tags"
+            render={({ field: { onChange, value } }) => (
+              <TagSelector
+                selectedTags={value || []}
+                onTagsChange={onChange}
+              />
+            )}
+          />
+        </View>
+
+        {/* Action Buttons */}
+        <View style={styles.actionButtons}>
+          <Button
+            title="Cancel"
+            variant="outline"
+            onPress={handleCancel}
+            disabled={isSubmitting}
+            style={styles.cancelButton}
+          />
+          <Button
+            title={mode === 'create' ? 'Create Recipe' : 'Save Changes'}
+            variant="primary"
+            onPress={handleSubmit(onSubmit) as any}
+            disabled={!isValid || isSubmitting}
+            loading={isSubmitting}
+            style={styles.saveButton}
+          />
+        </View>
+
+        {/* Bottom spacing */}
+        <View style={{ height: 40 }} />
       </ScrollView>
+
+      {/* Task 9.3: Toast notification for success and error feedback */}
+      <Toast
+        visible={toast.visible}
+        message={toast.message}
+        type={toast.type}
+        onHide={() => setToast({ ...toast, visible: false })}
+      />
     </KeyboardAvoidingView>
   );
 }
+
+// Task 11.1: Memoize the component to prevent unnecessary re-renders
+export const RecipeFormScreenOptimized = React.memo(RecipeFormScreen);
 
 const styles = StyleSheet.create({
   container: {
@@ -511,6 +607,10 @@ const styles = StyleSheet.create({
   },
   scrollView: {
     flex: 1,
+    backgroundColor: '#FFFFFF',
+  },
+  scrollViewDark: {
+    backgroundColor: '#000000',
   },
   scrollContent: {
     padding: 16,
@@ -520,138 +620,74 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+  },
+  loadingContainerDark: {
+    backgroundColor: '#000000',
   },
   loadingText: {
     marginTop: 12,
     fontSize: 16,
+    color: '#8E8E93',
+  },
+  loadingTextDark: {
+    color: '#8E8E93',
   },
   section: {
-    marginBottom: 20,
+    marginBottom: 24,
   },
-  row: {
+  sectionHeader: {
     flexDirection: 'row',
-    gap: 12,
-    marginBottom: 20,
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
   },
-  column: {
-    flex: 1,
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#000000',
+    marginBottom: 12,
   },
-  halfWidth: {
-    flex: 1,
+  sectionTitleDark: {
+    color: '#FFFFFF',
+  },
+  fieldContainer: {
+    marginBottom: 16,
   },
   label: {
     fontSize: 14,
     fontWeight: '600',
-    marginBottom: 8,
+    marginBottom: 6,
+    color: '#000000',
   },
-  required: {
-    color: '#FF3B30',
+  labelDark: {
+    color: '#FFFFFF',
   },
-  input: {
-    height: 44,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    fontSize: 16,
-    borderWidth: 1,
+  row: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 16,
   },
-  flexInput: {
+  halfWidth: {
     flex: 1,
   },
-  smallInput: {
-    width: 70,
+  addButton: {
+    padding: 4,
   },
-  textArea: {
-    height: 80,
-    paddingTop: 12,
-    textAlignVertical: 'top',
+  actionButtons: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 24,
   },
-  pickerContainer: {
-    borderRadius: 8,
-    borderWidth: 1,
-    overflow: 'hidden',
-    justifyContent: 'center',
+  cancelButton: {
+    flex: 1,
   },
-  picker: {
-    height: 44,
-  },
-  unitPicker: {
-    width: 100,
-  },
-  hint: {
-    fontSize: 12,
-    marginTop: 4,
+  saveButton: {
+    flex: 2,
   },
   errorText: {
     color: '#FF3B30',
     fontSize: 12,
     marginTop: 4,
-  },
-  imageButton: {
-    height: 120,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderStyle: 'dashed',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 8,
-  },
-  imageButtonText: {
-    fontSize: 14,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    marginBottom: 12,
-  },
-  dynamicFieldContainer: {
-    marginBottom: 12,
-  },
-  dynamicFieldContent: {
-    flexDirection: 'row',
-    gap: 8,
-    alignItems: 'center',
-  },
-  stepHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  stepNumber: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  removeButton: {
-    padding: 4,
-  },
-  removeButtonDisabled: {
-    opacity: 0.3,
-  },
-  addButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingVertical: 12,
-  },
-  addButtonText: {
-    fontSize: 16,
-    color: '#007AFF',
-    fontWeight: '600',
-  },
-  saveButton: {
-    backgroundColor: '#007AFF',
-    height: 50,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: 20,
-  },
-  saveButtonDisabled: {
-    opacity: 0.6,
-  },
-  saveButtonText: {
-    color: '#FFFFFF',
-    fontSize: 17,
-    fontWeight: '600',
   },
 });

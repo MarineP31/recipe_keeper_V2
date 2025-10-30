@@ -1,6 +1,7 @@
 /**
  * RecipeRepositoryScreen component
  * Main screen for browsing, searching, and filtering recipes
+ * Task 8.2 & 8.3: FAB Integration and Navigation Flows
  */
 
 import React, { useCallback } from 'react';
@@ -9,9 +10,8 @@ import {
   StyleSheet,
   View,
   useColorScheme,
-  Alert,
 } from 'react-native';
-// import { useRouter } from 'expo-router'; // TODO: Uncomment when navigation is implemented
+import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { SearchBar } from '@/components/ui/SearchBar';
 import { TagFilter } from '@/components/ui/TagFilter';
@@ -33,6 +33,7 @@ import type { Recipe } from '@/lib/db';
  * - Pull-to-refresh
  * - Infinite scroll pagination
  * - FAB for adding new recipes
+ * - Navigation to recipe detail and create screens
  *
  * @returns RecipeRepositoryScreen component
  *
@@ -43,7 +44,7 @@ import type { Recipe } from '@/lib/db';
  * ```
  */
 export function RecipeRepositoryScreen() {
-  // const router = useRouter(); // TODO: Uncomment when navigation is implemented
+  const router = useRouter();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
 
@@ -70,29 +71,32 @@ export function RecipeRepositoryScreen() {
   const backgroundColor = isDark ? '#000000' : '#F2F2F7';
 
   /**
-   * Handle recipe card press - navigate to detail screen
+   * Task 8.3: Handle recipe card press - navigate to detail screen (Read flow)
    */
   const handleRecipePress = useCallback((recipe: Recipe) => {
-    // TODO: Navigate to recipe detail screen when implemented
-    // For now, show an alert
-    Alert.alert(
-      recipe.title,
-      `${recipe.servings} servings • ${(recipe.prepTime || 0) + (recipe.cookTime || 0)} min`,
-      [{ text: 'OK' }]
-    );
-  }, []);
+    try {
+      if (!recipe.id) {
+        console.error('Recipe missing ID:', recipe);
+        return;
+      }
+      router.push(`/recipe/${recipe.id}` as any);
+    } catch (error) {
+      console.error('Navigation error:', error);
+      // Gracefully handle navigation error - could show toast notification
+    }
+  }, [router]);
 
   /**
-   * Handle FAB press - navigate to add recipe screen
+   * Task 8.2 & 8.3: Handle FAB press - navigate to create screen (Create flow)
    */
   const handleAddRecipe = useCallback(() => {
-    // TODO: Navigate to add recipe screen when implemented
-    Alert.alert(
-      'Add Recipe',
-      'Recipe creation screen will be implemented in the next phase',
-      [{ text: 'OK' }]
-    );
-  }, []);
+    try {
+      router.push('/recipe-form/create' as any);
+    } catch (error) {
+      console.error('Navigation error:', error);
+      // Gracefully handle navigation error
+    }
+  }, [router]);
 
   /**
    * Render header with search, filters, and view toggle

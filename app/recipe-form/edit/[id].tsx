@@ -1,6 +1,6 @@
 /**
  * Recipe Edit Screen
- * Task Group 5.9: Form for editing an existing recipe
+ * Task 7.3: Update Operation with proper navigation back to recipe detail
  */
 
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
@@ -32,8 +32,13 @@ export default function RecipeEditScreen() {
   const { id } = params;
 
   const handleSave = (recipe: Recipe) => {
-    // Navigate back to recipe detail screen after successful save
-    router.back();
+    // Task 7.3: Navigate back to recipe detail screen after successful update
+    if (recipe.id) {
+      router.replace(`/recipe/${recipe.id}`);
+    } else {
+      // Fallback - navigate back if recipe ID is not available
+      router.back();
+    }
   };
 
   return (
