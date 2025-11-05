@@ -1,6 +1,7 @@
 import { dbConnection, DatabaseError } from './connection';
 import { migration as initialSchemaMigration } from './migrations/001_initial_schema';
 import { migration as indexesMigration } from './migrations/002_add_indexes';
+import { migration as tagManagementMigration } from './migrations/003_tag_management';
 import { migrationRunner } from './migrations/index';
 import { seedDatabase, needsSeeding } from './seed';
 
@@ -10,6 +11,7 @@ import { seedDatabase, needsSeeding } from './seed';
 export const registerMigrations = (): void => {
   migrationRunner.register(initialSchemaMigration);
   migrationRunner.register(indexesMigration);
+  migrationRunner.register(tagManagementMigration);
 
   console.log('All migrations registered successfully');
 };
