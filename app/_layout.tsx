@@ -7,11 +7,15 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
 import 'react-native-reanimated';
 
+// Import Nativewind global styles
+import '../global.css';
+
 // Import crypto polyfill BEFORE any code that uses uuid
 import '@/lib/utils/crypto-polyfill';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { initializeDatabase } from '@/lib/db';
+import { ToastProvider } from '@/components/ui/Toast';
 
 export const unstable_settings = {
   anchor: '(tabs)',
@@ -46,18 +50,20 @@ export default function RootLayout() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <BottomSheetModalProvider>
-        <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-          <Stack>
-            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-            <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
-            <Stack.Screen name="recipe/[id]" options={{ headerShown: true }} />
-            <Stack.Screen name="recipe-form/create" options={{ headerShown: true }} />
-            <Stack.Screen name="recipe-form/edit/[id]" options={{ headerShown: true }} />
-          </Stack>
-          <StatusBar style="auto" />
-        </ThemeProvider>
-      </BottomSheetModalProvider>
+      <ToastProvider>
+        <BottomSheetModalProvider>
+          <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+            <Stack>
+              <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+              <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
+              <Stack.Screen name="recipe/[id]" options={{ headerShown: true }} />
+              <Stack.Screen name="recipe-form/create" options={{ headerShown: true }} />
+              <Stack.Screen name="recipe-form/edit/[id]" options={{ headerShown: true }} />
+            </Stack>
+            <StatusBar style="auto" />
+          </ThemeProvider>
+        </BottomSheetModalProvider>
+      </ToastProvider>
     </GestureHandlerRootView>
   );
 }

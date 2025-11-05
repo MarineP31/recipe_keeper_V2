@@ -56,7 +56,9 @@
           "photosPermission": "The app requires access to your photo library to select recipe images.",
           "cameraPermission": "The app requires camera access to take photos of your recipes."
         }
-      ]
+      ],
+      "expo-sqlite",
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true,
